@@ -1,0 +1,116 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.production
+.env.*.local
+backend/.env
+frontend/.env
+
+# Python
+venv/
+.venv/
+backend/venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+
+# Build outputs
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+
+# Testing
+coverage/
+htmlcov/
+.coverage
+.nyc_output/
+*.test.js.snap
+.pytest_cache/
+
+# Backup files
+*.backup
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Cache
+.cache/
+.parcel-cache/
+.next/
+.nuxt/
+
+# Secrets and keys
+*.key
+*.pem
+*.p12
+*.jks
+secrets/
+credentials/
+
+# Tokens and credentials (test artifacts)
+token.txt
+token_response.json
+new_token.json
+login.json
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Archives
+*.tar.gz
+*.zip
+
+# QR test artifacts
+qr_test.png
+
+# Backend specific
+backend/dist/
+backend/build/
+
+# Frontend specific
+frontend/dist/
+frontend/build/
+
+# Package managers
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.pnpm-store/
+
+# Optional
+.eslintcache
+.stylelintcache
