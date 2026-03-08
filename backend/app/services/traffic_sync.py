@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.core.database import SessionLocal
-from app.models import Server, ClientConfig, ProtocolType, EndpointLog, Subscription
+from app.models import Server, ClientConfig, ProtocolType, EndpointLog, Subscription, TrafficHistory
 from app.services.ssh_manager import SSHManager, create_ssh_manager
 from app.services.awg_manager import AWGManager
 from app.services.wireguard_manager import WireGuardManager
@@ -48,6 +48,14 @@ def _track_endpoint(db: Session, config_id: int, endpoint_str: str) -> None:
     if not last_log or last_log.endpoint_ip != ip:
         now = datetime.utcnow()
         db.add(EndpointLog(config_id=config_id, endpoint_ip=ip, seen_at=now, created_at=now))
+
+
+def _save_traffic_delta(db: Session, config_id: int, old_rx: int, old_tx: int, new_rx: int, new_tx: int) -> None:
+    """Write a TrafficHistory delta record if traffic has increased since last sync."""
+    delta_rx = max(0, new_rx - old_rx)
+    delta_tx = max(0, new_tx - old_tx)
+    if delta_rx > 0 or delta_tx > 0:
+        db.add(TrafficHistory(config_id=config_id, bytes_received=delta_rx, bytes_sent=delta_tx))
 
 
 def _update_online_status(db_config: ClientConfig, handshake_ts: int | None) -> None:
@@ -147,7 +155,7 @@ def check_traffic_limit(config: ClientConfig, db: Session) -> bool:
     if not sub or not sub.traffic_limit_gb or sub.traffic_limit_gb <= 0:
         return False
 
-    total_gb = (config.bytes_received + config.bytes_sent) / (1024 ** 3)
+    total_gb = ((config.bytes_received or 0) + (config.bytes_sent or 0)) / (1024 ** 3)
     sub.traffic_used_gb = round(total_gb, 2)
 
     if total_gb >= sub.traffic_limit_gb:
@@ -218,13 +226,15 @@ def sync_server_traffic(server: Server, db: Session) -> dict:
                     ClientConfig.peer_public_key == public_key,
                 ).first()
                 if db_config:
-                    db_config.bytes_received = peer.get("transfer_rx", 0)
-                    db_config.bytes_sent = peer.get("transfer_tx", 0)
+                    new_rx = peer.get("transfer_rx", 0)
+                    new_tx = peer.get("transfer_tx", 0)
+                    _save_traffic_delta(db, db_config.id, db_config.bytes_received or 0, db_config.bytes_sent or 0, new_rx, new_tx)
+                    db_config.bytes_received = new_rx
+                    db_config.bytes_sent = new_tx
                     endpoint = peer.get("endpoint", "")
                     if endpoint and endpoint != '(none)':
                         db_config.endpoint = endpoint
                         _track_endpoint(db, db_config.id, endpoint)
-                    # Update online status from handshake
                     _update_online_status(db_config, peer.get("latest_handshake"))
                     check_traffic_limit(db_config, db)
                     updated += 1
@@ -245,13 +255,15 @@ def sync_server_traffic(server: Server, db: Session) -> dict:
                     ClientConfig.peer_public_key == public_key,
                 ).first()
                 if db_config:
-                    db_config.bytes_received = peer.get("transfer_rx", 0)
-                    db_config.bytes_sent = peer.get("transfer_tx", 0)
+                    new_rx = peer.get("transfer_rx", 0)
+                    new_tx = peer.get("transfer_tx", 0)
+                    _save_traffic_delta(db, db_config.id, db_config.bytes_received or 0, db_config.bytes_sent or 0, new_rx, new_tx)
+                    db_config.bytes_received = new_rx
+                    db_config.bytes_sent = new_tx
                     endpoint = peer.get("endpoint", "")
                     if endpoint and endpoint != '(none)':
                         db_config.endpoint = endpoint
                         _track_endpoint(db, db_config.id, endpoint)
-                    # Update online status from handshake
                     _update_online_status(db_config, peer.get("latest_handshake"))
                     check_traffic_limit(db_config, db)
                     updated += 1
@@ -278,8 +290,8 @@ def sync_server_traffic(server: Server, db: Session) -> dict:
                 if db_config:
                     new_rx = client_stats.get("downlink", 0)
                     new_tx = client_stats.get("uplink", 0)
-                    # XRay: detect online by traffic change since last sync
                     traffic_changed = (new_rx != db_config.bytes_received or new_tx != db_config.bytes_sent)
+                    _save_traffic_delta(db, db_config.id, db_config.bytes_received or 0, db_config.bytes_sent or 0, new_rx, new_tx)
                     db_config.bytes_received = new_rx
                     db_config.bytes_sent = new_tx
                     if traffic_changed:

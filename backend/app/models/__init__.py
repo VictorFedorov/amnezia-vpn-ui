@@ -63,7 +63,7 @@ class Server(Base):
         return None
 
     def __repr__(self):
-        return f"<Server(id={self.id}, name={self.name}, protocol={self.protocol})>"
+        return f"<Server(id={self.id}, name={self.name}, host={self.host})>"
 
 
 class User(Base):

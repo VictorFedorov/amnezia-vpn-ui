@@ -245,26 +245,44 @@ export const configsAPI = {
   },
 };
 
+export type TrafficPeriod = 'day' | 'week' | 'month' | 'quarter' | 'year';
+
 // Traffic API
 export const trafficAPI = {
   getRealtime: async (serverId?: number, clientId?: number) => {
     const params = new URLSearchParams();
     if (serverId) params.append('server_id', serverId.toString());
     if (clientId) params.append('client_id', clientId.toString());
-    
     const response = await api.get(`/traffic/realtime?${params.toString()}`);
     return response.data;
   },
-  
-  getTopUsers: async (limit = 10, serverId?: number) => {
-    let url = `/traffic/top-users?limit=${limit}`;
-    if (serverId) url += `&server_id=${serverId}`;
-    const response = await api.get(url);
+
+  getSummary: async (period: TrafficPeriod, serverId?: number) => {
+    const params = new URLSearchParams({ period });
+    if (serverId) params.append('server_id', serverId.toString());
+    const response = await api.get(`/traffic/summary?${params.toString()}`);
     return response.data;
   },
 
-  getByServer: async () => {
-    const response = await api.get('/traffic/by-server');
+  getHistory: async (period: TrafficPeriod, serverId?: number) => {
+    const params = new URLSearchParams({ period });
+    if (serverId) params.append('server_id', serverId.toString());
+    const response = await api.get(`/traffic/history?${params.toString()}`);
+    return response.data;
+  },
+
+  getTopUsers: async (limit = 10, serverId?: number, period?: TrafficPeriod) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (serverId) params.append('server_id', serverId.toString());
+    if (period) params.append('period', period);
+    const response = await api.get(`/traffic/top-users?${params.toString()}`);
+    return response.data;
+  },
+
+  getByServer: async (period?: TrafficPeriod) => {
+    const params = new URLSearchParams();
+    if (period) params.append('period', period);
+    const response = await api.get(`/traffic/by-server?${params.toString()}`);
     return response.data;
   },
 };

@@ -7,15 +7,15 @@ class Settings(BaseSettings):
     
     # Основные настройки
     ENV: str = "development"
-    DEBUG: bool = True
-    
+    DEBUG: bool = False
+
     # База данных
     DATABASE_URL: str
-    
+
     # JWT аутентификация
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 43200  # 30 дней
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # 1 час
 
     # Отдельный ключ шифрования (если не задан, используется SECRET_KEY)
     ENCRYPTION_KEY: Optional[str] = None
