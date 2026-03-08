@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 from datetime import datetime
 import logging
+import time
 
 from app.core.database import get_db
 from app.models import User, Server, ClientConfig, ProtocolType
@@ -207,120 +208,106 @@ async def get_server_configs(
     return configs
 
 
+def _build_response_from_db(server_id: int, server_name: str, db: Session) -> dict:
+    """Формирует ответ fetch-users из БД (используется как fallback при SSH-ошибке)."""
+    configs = (
+        db.query(ClientConfig)
+        .options(joinedload(ClientConfig.user), joinedload(ClientConfig.client))
+        .filter(ClientConfig.server_id == server_id)
+        .all()
+    )
+    awg_peers, wireguard_peers, xray_clients = [], [], []
+    for config in configs:
+        base = {
+            "config_id": config.id,
+            "client_id": config.client_id,
+            "user_id": config.user_id,
+            "username": config.user.username if config.user else None,
+            "device_name": config.device_name,
+            "client_name": config.client.name if config.client else None,
+            "is_active": config.is_active,
+            "is_online": config.is_online,
+            "transfer_rx": config.bytes_received or 0,
+            "transfer_tx": config.bytes_sent or 0,
+            "last_seen": config.last_seen.isoformat() if config.last_seen else None,
+            "config_content": config.config_content,
+        }
+        if config.protocol == ProtocolType.AWG:
+            awg_peers.append({**base, "public_key": config.peer_public_key, "endpoint": config.endpoint, "allowed_ips": config.allowed_ips})
+        elif config.protocol == ProtocolType.WIREGUARD:
+            wireguard_peers.append({**base, "public_key": config.peer_public_key, "endpoint": config.endpoint, "allowed_ips": config.allowed_ips})
+        elif config.protocol.value in ("vless", "vmess", "trojan", "shadowsocks"):
+            xray_clients.append({**base, "uuid": config.client_uuid, "protocol": config.protocol.value})
+    return {
+        "server_id": server_id,
+        "server_name": server_name,
+        "awg_peers": awg_peers,
+        "wireguard_peers": wireguard_peers,
+        "xray_clients": xray_clients,
+        "awg_status": "active" if awg_peers else "inactive",
+        "wireguard_status": "active" if wireguard_peers else "inactive",
+        "xray_status": "active" if xray_clients else "inactive",
+    }
+
+
 @router.get("/{server_id}/fetch-users")
 async def fetch_server_users(
     server_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """
-    Получить список пользователей сервера с сервера (через SSH)
-    """
+    """Получить список пользователей сервера с сервера (через SSH)"""
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Server not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
 
-    # Создаем SSH менеджер
     try:
         ssh_manager = create_ssh_manager(
             server_host=server.host,
             server_port=server.port,
             server_user=server.ssh_user,
             server_password=server.get_password(),
-            server_key=server.ssh_key_path
+            server_key=server.ssh_key_path,
         )
         if not ssh_manager.connect():
             raise Exception("SSH connection failed")
     except Exception as e:
         logger.error(f"SSH connection error: {str(e)}")
-        # В случае ошибки возвращаем данные из БД
-        db_configs = db.query(ClientConfig).filter(
-            ClientConfig.server_id == server_id
-        ).all()
+        return _build_response_from_db(server_id, server.name, db)
 
-        # Группируем по протоколам
-        awg_peers = []
-        wireguard_peers = []
-        xray_clients = []
-
-        for config in db_configs:
-            base_data = {
-                "config_id": config.id,
-                "client_id": config.client_id,
-                "user_id": config.user_id,
-                "username": config.user.username if config.user else None,
-                "device_name": config.device_name,
-                "client_name": config.client.name if config.client else None,
-                "is_active": config.is_active,
-                "is_online": config.is_online,
-                "transfer_rx": config.bytes_received or 0,
-                "transfer_tx": config.bytes_sent or 0,
-                "last_seen": config.last_seen.isoformat() if config.last_seen else None,
-                "config_content": config.config_content
-            }
-
-            if config.protocol.value == "awg":
-                awg_peers.append({
-                    **base_data,
-                    "public_key": config.peer_public_key,
-                    "endpoint": config.endpoint,
-                    "allowed_ips": config.allowed_ips
-                })
-            elif config.protocol.value == "wireguard":
-                wireguard_peers.append({
-                    **base_data,
-                    "public_key": config.peer_public_key,
-                    "endpoint": config.endpoint,
-                    "allowed_ips": config.allowed_ips
-                })
-            elif config.protocol.value in ["vless", "vmess", "trojan", "shadowsocks"]:
-                xray_clients.append({
-                    **base_data,
-                    "uuid": config.client_uuid,
-                    "protocol": config.protocol.value
-                })
-
-        result = {
-            "server_id": server_id,
-            "server_name": server.name,
-            "awg_peers": awg_peers,
-            "wireguard_peers": wireguard_peers,
-            "xray_clients": xray_clients,
-            "awg_status": "active" if awg_peers else "inactive",
-            "wireguard_status": "active" if wireguard_peers else "inactive",
-            "xray_status": "active" if xray_clients else "inactive"
+    awg_peers, wireguard_peers, xray_clients = [], [], []
+    try:
+        # Предзагружаем все конфиги одним батч-запросом на протокол (3 запроса вместо N)
+        awg_map = {
+            c.peer_public_key: c
+            for c in db.query(ClientConfig)
+            .options(joinedload(ClientConfig.user), joinedload(ClientConfig.client))
+            .filter(ClientConfig.server_id == server_id, ClientConfig.protocol == ProtocolType.AWG)
+            .all()
+        }
+        wg_map = {
+            c.peer_public_key: c
+            for c in db.query(ClientConfig)
+            .options(joinedload(ClientConfig.user), joinedload(ClientConfig.client))
+            .filter(ClientConfig.server_id == server_id, ClientConfig.protocol == ProtocolType.WIREGUARD)
+            .all()
+        }
+        xray_map = {
+            c.client_uuid: c
+            for c in db.query(ClientConfig)
+            .options(joinedload(ClientConfig.user), joinedload(ClientConfig.client))
+            .filter(
+                ClientConfig.server_id == server_id,
+                ClientConfig.protocol.in_([ProtocolType.VLESS, ProtocolType.VMESS, ProtocolType.TROJAN, ProtocolType.SHADOWSOCKS]),
+            )
+            .all()
         }
 
-        return result
-
-    # Получаем клиентов с сервера
-    awg_peers = []
-    wireguard_peers = []
-    xray_clients = []
-
-    try:
         # AWG
-        awg_manager = AWGManager(ssh_manager)
-        awg_peers_data = awg_manager.get_peers()
-        import time
-        for peer in awg_peers_data:
-            # Определяем online статус (если handshake был меньше 3 минут назад)
+        for peer in AWGManager(ssh_manager).get_peers():
             latest_handshake = peer.get("latest_handshake") or 0
-            is_online = False
-            if latest_handshake > 0:
-                time_since_handshake = time.time() - latest_handshake
-                is_online = time_since_handshake < 180  # 3 минуты
-            
-            # Проверяем есть ли этот пир в БД
-            db_config = db.query(ClientConfig).filter(
-                ClientConfig.server_id == server_id,
-                ClientConfig.protocol == ProtocolType.AWG,
-                ClientConfig.peer_public_key == peer.get("public_key")
-            ).first()
-            
+            is_online = latest_handshake > 0 and (time.time() - latest_handshake) < 180
+            c = awg_map.get(peer.get("public_key"))
             awg_peers.append({
                 "public_key": peer.get("public_key"),
                 "endpoint": peer.get("endpoint"),
@@ -329,34 +316,21 @@ async def fetch_server_users(
                 "transfer_rx": peer.get("transfer_rx", 0),
                 "transfer_tx": peer.get("transfer_tx", 0),
                 "is_online": is_online,
-                "is_active": db_config.is_active if db_config else True,
-                "config_id": db_config.id if db_config else None,
-                "client_id": db_config.client_id if db_config else None,
-                "user_id": db_config.user_id if db_config else None,
-                "username": db_config.user.username if db_config and db_config.user else None,
-                "client_name": db_config.client.name if db_config and db_config.client else None,
-                "device_name": db_config.device_name if db_config else None,
-                "config_content": db_config.config_content if db_config else None,
+                "is_active": c.is_active if c else True,
+                "config_id": c.id if c else None,
+                "client_id": c.client_id if c else None,
+                "user_id": c.user_id if c else None,
+                "username": c.user.username if c and c.user else None,
+                "client_name": c.client.name if c and c.client else None,
+                "device_name": c.device_name if c else None,
+                "config_content": c.config_content if c else None,
             })
 
         # WireGuard
-        wg_manager = WireGuardManager(ssh_manager)
-        wg_peers_data = wg_manager.get_peers()
-        for peer in wg_peers_data:
-            # Определяем online статус (если handshake был меньше 3 минут назад)
+        for peer in WireGuardManager(ssh_manager).get_peers():
             latest_handshake = peer.get("latest_handshake") or 0
-            is_online = False
-            if latest_handshake > 0:
-                time_since_handshake = time.time() - latest_handshake
-                is_online = time_since_handshake < 180  # 3 минуты
-            
-            # Проверяем есть ли этот пир в БД
-            db_config = db.query(ClientConfig).filter(
-                ClientConfig.server_id == server_id,
-                ClientConfig.protocol == ProtocolType.WIREGUARD,
-                ClientConfig.peer_public_key == peer.get("public_key")
-            ).first()
-            
+            is_online = latest_handshake > 0 and (time.time() - latest_handshake) < 180
+            c = wg_map.get(peer.get("public_key"))
             wireguard_peers.append({
                 "public_key": peer.get("public_key"),
                 "endpoint": peer.get("endpoint"),
@@ -365,102 +339,48 @@ async def fetch_server_users(
                 "transfer_rx": peer.get("transfer_rx", 0),
                 "transfer_tx": peer.get("transfer_tx", 0),
                 "is_online": is_online,
-                "is_active": db_config.is_active if db_config else True,
-                "config_id": db_config.id if db_config else None,
-                "client_id": db_config.client_id if db_config else None,
-                "user_id": db_config.user_id if db_config else None,
-                "username": db_config.user.username if db_config and db_config.user else None,
-                "client_name": db_config.client.name if db_config and db_config.client else None,
-                "device_name": db_config.device_name if db_config else None,
-                "config_content": db_config.config_content if db_config else None,
+                "is_active": c.is_active if c else True,
+                "config_id": c.id if c else None,
+                "client_id": c.client_id if c else None,
+                "user_id": c.user_id if c else None,
+                "username": c.user.username if c and c.user else None,
+                "client_name": c.client.name if c and c.client else None,
+                "device_name": c.device_name if c else None,
+                "config_content": c.config_content if c else None,
             })
 
         # XRay
         xray_manager = XRayManager(ssh_manager)
-        xray_clients_data = xray_manager.get_clients()
         xray_stats = xray_manager.get_stats()
-
-        for client in xray_clients_data:
+        for client in xray_manager.get_clients():
             uuid = client.get("uuid")
             email = client.get("email", "")
-
-            # Ищем конфиг в БД по UUID
-            db_config = db.query(ClientConfig).filter(
-                ClientConfig.server_id == server_id,
-                ClientConfig.client_uuid == uuid
-            ).first()
-
-            # Получаем статистику трафика — сначала по email, затем по UUID
+            c = xray_map.get(uuid)
             client_stats = xray_stats.get(email) or xray_stats.get(uuid, {})
-
             xray_clients.append({
                 "uuid": uuid,
                 "email": email,
                 "flow": client.get("flow"),
                 "protocol": client.get("protocol"),
-                "config_id": db_config.id if db_config else None,
-                "client_id": db_config.client_id if db_config else None,
-                "user_id": db_config.user_id if db_config else None,
-                "username": db_config.user.username if db_config and db_config.user else None,
-                "client_name": db_config.client.name if db_config and db_config.client else None,
-                "device_name": db_config.device_name if db_config else None,
-                "is_active": db_config.is_active if db_config else True,
+                "config_id": c.id if c else None,
+                "client_id": c.client_id if c else None,
+                "user_id": c.user_id if c else None,
+                "username": c.user.username if c and c.user else None,
+                "client_name": c.client.name if c and c.client else None,
+                "device_name": c.device_name if c else None,
+                "is_active": c.is_active if c else True,
                 "transfer_tx": client_stats.get("uplink", 0),
                 "transfer_rx": client_stats.get("downlink", 0),
             })
 
     except Exception as e:
         logger.error(f"Error fetching users from server: {str(e)}")
-        # В случае ошибки возвращаем данные из БД
-        db_configs = db.query(ClientConfig).filter(
-            ClientConfig.server_id == server_id
-        ).all()
-
-        # Группируем по протоколам
-        awg_peers = []
-        wireguard_peers = []
-        xray_clients = []
-
-        for config in db_configs:
-            base_data = {
-                "config_id": config.id,
-                "client_id": config.client_id,
-                "user_id": config.user_id,
-                "username": config.user.username if config.user else None,
-                "device_name": config.device_name,
-                "client_name": config.client.name if config.client else None,
-                "is_active": config.is_active,
-                "is_online": config.is_online,
-                "transfer_rx": config.bytes_received or 0,
-                "transfer_tx": config.bytes_sent or 0,
-                "last_seen": config.last_seen.isoformat() if config.last_seen else None,
-                "config_content": config.config_content
-            }
-
-            if config.protocol.value == "awg":
-                awg_peers.append({
-                    **base_data,
-                    "public_key": config.peer_public_key,
-                    "endpoint": config.endpoint,
-                    "allowed_ips": config.allowed_ips
-                })
-            elif config.protocol.value == "wireguard":
-                wireguard_peers.append({
-                    **base_data,
-                    "public_key": config.peer_public_key,
-                    "endpoint": config.endpoint,
-                    "allowed_ips": config.allowed_ips
-                })
-            elif config.protocol.value in ["vless", "vmess", "trojan", "shadowsocks"]:
-                xray_clients.append({
-                    **base_data,
-                    "uuid": config.client_uuid,
-                    "protocol": config.protocol.value
-                })
+        awg_peers, wireguard_peers, xray_clients = [], [], []
+        return _build_response_from_db(server_id, server.name, db)
     finally:
         ssh_manager.disconnect()
 
-    result = {
+    return {
         "server_id": server_id,
         "server_name": server.name,
         "awg_peers": awg_peers,
@@ -468,10 +388,8 @@ async def fetch_server_users(
         "xray_clients": xray_clients,
         "awg_status": "active" if awg_peers else "inactive",
         "wireguard_status": "active" if wireguard_peers else "inactive",
-        "xray_status": "active" if xray_clients else "inactive"
+        "xray_status": "active" if xray_clients else "inactive",
     }
-
-    return result
 
 
 @router.post("/{server_id}/enable-xray-stats")

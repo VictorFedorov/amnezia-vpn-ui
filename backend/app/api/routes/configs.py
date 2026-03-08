@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
@@ -138,8 +138,8 @@ async def bulk_create_configs(
 
 @router.get("/", response_model=List[ClientConfigResponse])
 async def get_configs(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
     server_id: int = None,
     client_id: int = None,
     db: Session = Depends(get_db),

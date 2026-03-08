@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
+import ErrorBoundary from './components/ErrorBoundary';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
@@ -32,7 +33,7 @@ function App() {
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <Dashboard />
+              <ErrorBoundary context="Dashboard"><Dashboard /></ErrorBoundary>
             </ProtectedRoute>
           }
         />
@@ -40,7 +41,7 @@ function App() {
           path="/users"
           element={
             <ProtectedRoute>
-              <Users />
+              <ErrorBoundary context="Users"><Users /></ErrorBoundary>
             </ProtectedRoute>
           }
         />
@@ -48,7 +49,7 @@ function App() {
           path="/servers"
           element={
             <ProtectedRoute>
-              <Servers />
+              <ErrorBoundary context="Servers"><Servers /></ErrorBoundary>
             </ProtectedRoute>
           }
         />
@@ -56,7 +57,7 @@ function App() {
           path="/users-on-servers"
           element={
             <ProtectedRoute>
-              <UsersOnServers />
+              <ErrorBoundary context="UsersOnServers"><UsersOnServers /></ErrorBoundary>
             </ProtectedRoute>
           }
         />
@@ -64,7 +65,7 @@ function App() {
           path="/subscriptions"
           element={
             <ProtectedRoute>
-              <Subscriptions />
+              <ErrorBoundary context="Subscriptions"><Subscriptions /></ErrorBoundary>
             </ProtectedRoute>
           }
         />
@@ -72,7 +73,7 @@ function App() {
           path="/subscription-plans"
           element={
             <ProtectedRoute>
-              <SubscriptionPlans />
+              <ErrorBoundary context="SubscriptionPlans"><SubscriptionPlans /></ErrorBoundary>
             </ProtectedRoute>
           }
         />
@@ -80,7 +81,7 @@ function App() {
           path="/traffic"
           element={
             <ProtectedRoute>
-              <Traffic />
+              <ErrorBoundary context="Traffic"><Traffic /></ErrorBoundary>
             </ProtectedRoute>
           }
         />
@@ -88,7 +89,7 @@ function App() {
           path="/import"
           element={
             <ProtectedRoute>
-              <ImportConfig />
+              <ErrorBoundary context="ImportConfig"><ImportConfig /></ErrorBoundary>
             </ProtectedRoute>
           }
         />
