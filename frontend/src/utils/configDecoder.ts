@@ -4,7 +4,7 @@
  */
 
 export interface DecodedConfig {
-  format: 'amnezia' | 'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'unknown';
+  format: 'amnezia' | 'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'openvpn' | 'unknown';
   protocol: string;
   server: string;
   port: number;
@@ -59,8 +59,18 @@ async function zlibDecompress(data: Uint8Array): Promise<string> {
 /** Decode AmneziaVPN vpn:// format */
 async function decodeAmnezia(raw: string): Promise<DecodedConfig> {
   const bytes = base64urlToBytes(raw);
-  // Skip first 4 bytes (magic/length header), rest is zlib
-  const compressed = bytes.slice(4);
+  // Find zlib magic bytes within the first 20 bytes of the header.
+  // AmneziaVPN prepends a custom header (length varies by version: 4 or 12 bytes).
+  // Valid zlib starts with 0x78 followed by 0x01, 0x5E, 0x9C, or 0xDA.
+  const zlibMagicSecondBytes = new Set([0x01, 0x5E, 0x9C, 0xDA]);
+  let zlibOffset = 4; // fallback
+  for (let i = 0; i < Math.min(bytes.length - 1, 20); i++) {
+    if (bytes[i] === 0x78 && zlibMagicSecondBytes.has(bytes[i + 1])) {
+      zlibOffset = i;
+      break;
+    }
+  }
+  const compressed = bytes.slice(zlibOffset);
   const json = await zlibDecompress(compressed);
   const outer = JSON.parse(json);
 
@@ -156,6 +166,20 @@ async function decodeAmnezia(raw: string): Promise<DecodedConfig> {
       server: serverMatch?.[1] || '',
       port: parseInt(serverMatch?.[2] || '51820'),
       uuid: uuidMatch?.[1],
+      description,
+      raw: outer,
+    };
+  }
+
+  // OpenVPN / AmneziaOpenVPN
+  if (containerName.includes('openvpn') || container.openvpn) {
+    const ovpnConfig: string = container.openvpn?.last_config || '';
+    const serverMatch = ovpnConfig.match(/^remote\s+([^\s]+)\s+(\d+)/im);
+    return {
+      format: 'amnezia',
+      protocol: 'openvpn',
+      server: serverMatch?.[1] || '',
+      port: parseInt(serverMatch?.[2] || '1194'),
       description,
       raw: outer,
     };
@@ -264,6 +288,16 @@ export async function decodeConfig(input: string): Promise<DecodedConfig> {
   }
   if (trimmed.startsWith('ss://')) {
     return decodeShadowsocks(trimmed);
+  }
+
+  // Try to decode as raw AmneziaVPN base64 (without vpn:// prefix)
+  const noWhitespace = trimmed.replace(/\s+/g, '');
+  if (/^[A-Za-z0-9+/\-_]+=*$/.test(noWhitespace) && noWhitespace.length > 20) {
+    try {
+      return await decodeAmnezia(noWhitespace);
+    } catch (e) {
+      throw new Error(`Failed to decode AmneziaVPN config: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   throw new Error('Unknown config format. Supported: vpn://, vless://, vmess://, trojan://, ss://');
