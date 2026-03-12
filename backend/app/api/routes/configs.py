@@ -435,7 +435,7 @@ async def get_config_qrcode(
     print(f"QR generation for config {config_id}: protocol={config.protocol.value}, content_length={len(content_to_encode) if content_to_encode else 0}")
 
     # Пытаемся сгенерировать контент если он пуст и это XRay
-    if not content_to_encode and config.protocol.value in ["vless", "vmess"]:
+    if not content_to_encode and config.protocol in (ProtocolType.VLESS, ProtocolType.VMESS):
         try:
             if not config.server:
                 config.server = db.query(Server).filter(Server.id == config.server_id).first()

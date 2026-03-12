@@ -7,6 +7,9 @@ import {
   BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
+import { formatBytes } from '../utils/configDecoder';
+
+const BYTES_PER_GB = 1073741824;
 
 const PERIODS: { value: TrafficPeriod; label: string }[] = [
   { value: 'day',     label: 'День' },
@@ -16,13 +19,6 @@ const PERIODS: { value: TrafficPeriod; label: string }[] = [
   { value: 'year',    label: 'Год' },
 ];
 
-function formatBytes(bytes: number): string {
-  if (!bytes || bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
 
 function formatBucket(bucket: string, period: TrafficPeriod): string {
   if (!bucket) return '';
@@ -87,22 +83,22 @@ function Traffic() {
           label: formatBucket(r.bucket, p),
           download: r.download,
           upload: r.upload,
-          downloadGB: parseFloat((r.download / 1073741824).toFixed(3)),
-          uploadGB: parseFloat((r.upload / 1073741824).toFixed(3)),
+          downloadGB: parseFloat((r.download / BYTES_PER_GB).toFixed(3)),
+          uploadGB: parseFloat((r.upload / BYTES_PER_GB).toFixed(3)),
         }))
       );
 
       setTopUsers(
         usersData.map((u: { username: string; total_traffic: number }) => ({
           name: u.username,
-          trafficGB: parseFloat((u.total_traffic / 1073741824).toFixed(2)),
+          trafficGB: parseFloat((u.total_traffic / BYTES_PER_GB).toFixed(2)),
         }))
       );
 
       setByServer(
         serverData.map((s: { server_name: string; total_traffic: number }) => ({
           name: s.server_name,
-          trafficGB: parseFloat((s.total_traffic / 1073741824).toFixed(2)),
+          trafficGB: parseFloat((s.total_traffic / BYTES_PER_GB).toFixed(2)),
         }))
       );
     } catch (err) {

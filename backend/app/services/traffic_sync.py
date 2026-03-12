@@ -189,8 +189,8 @@ def _try_broadcast(data: dict) -> None:
         loop = ws_manager._loop
         if loop and loop.is_running():
             asyncio.run_coroutine_threadsafe(ws_manager.broadcast(data), loop)
-    except Exception:
-        pass  # WS not available or no clients connected
+    except Exception as e:
+        logger.debug(f"[broadcast] WS not available or no clients connected: {e}")
 
 
 def sync_server_traffic(server: Server, db: Session) -> dict:
@@ -213,63 +213,37 @@ def sync_server_traffic(server: Server, db: Session) -> dict:
         raise ConnectionError(f"SSH connection failed to {server.host}")
 
     try:
-        # --- AWG ---
-        try:
-            awg_manager = AWGManager(ssh_manager)
-            for peer in awg_manager.get_peers():
-                public_key = peer.get("public_key")
-                if not public_key:
-                    continue
-                db_config = db.query(ClientConfig).filter(
-                    ClientConfig.server_id == server.id,
-                    ClientConfig.protocol == ProtocolType.AWG,
-                    ClientConfig.peer_public_key == public_key,
-                ).first()
-                if db_config:
-                    new_rx = peer.get("transfer_rx", 0)
-                    new_tx = peer.get("transfer_tx", 0)
-                    _save_traffic_delta(db, db_config.id, db_config.bytes_received or 0, db_config.bytes_sent or 0, new_rx, new_tx)
-                    db_config.bytes_received = new_rx
-                    db_config.bytes_sent = new_tx
-                    endpoint = peer.get("endpoint", "")
-                    if endpoint and endpoint != '(none)':
-                        db_config.endpoint = endpoint
-                        _track_endpoint(db, db_config.id, endpoint)
-                    _update_online_status(db_config, peer.get("latest_handshake"))
-                    check_traffic_limit(db_config, db)
-                    updated += 1
-        except Exception as e:
-            errors.append(f"AWG: {e}")
-            logger.warning(f"[traffic_sync] AWG error on server {server.id}: {e}")
-
-        # --- WireGuard ---
-        try:
-            wg_manager = WireGuardManager(ssh_manager)
-            for peer in wg_manager.get_peers():
-                public_key = peer.get("public_key")
-                if not public_key:
-                    continue
-                db_config = db.query(ClientConfig).filter(
-                    ClientConfig.server_id == server.id,
-                    ClientConfig.protocol == ProtocolType.WIREGUARD,
-                    ClientConfig.peer_public_key == public_key,
-                ).first()
-                if db_config:
-                    new_rx = peer.get("transfer_rx", 0)
-                    new_tx = peer.get("transfer_tx", 0)
-                    _save_traffic_delta(db, db_config.id, db_config.bytes_received or 0, db_config.bytes_sent or 0, new_rx, new_tx)
-                    db_config.bytes_received = new_rx
-                    db_config.bytes_sent = new_tx
-                    endpoint = peer.get("endpoint", "")
-                    if endpoint and endpoint != '(none)':
-                        db_config.endpoint = endpoint
-                        _track_endpoint(db, db_config.id, endpoint)
-                    _update_online_status(db_config, peer.get("latest_handshake"))
-                    check_traffic_limit(db_config, db)
-                    updated += 1
-        except Exception as e:
-            errors.append(f"WireGuard: {e}")
-            logger.warning(f"[traffic_sync] WireGuard error on server {server.id}: {e}")
+        # --- AWG & WireGuard (общая логика) ---
+        for protocol, manager_cls, label in (
+            (ProtocolType.AWG, AWGManager, "AWG"),
+            (ProtocolType.WIREGUARD, WireGuardManager, "WireGuard"),
+        ):
+            try:
+                for peer in manager_cls(ssh_manager).get_peers():
+                    public_key = peer.get("public_key")
+                    if not public_key:
+                        continue
+                    db_config = db.query(ClientConfig).filter(
+                        ClientConfig.server_id == server.id,
+                        ClientConfig.protocol == protocol,
+                        ClientConfig.peer_public_key == public_key,
+                    ).first()
+                    if db_config:
+                        new_rx = peer.get("transfer_rx", 0)
+                        new_tx = peer.get("transfer_tx", 0)
+                        _save_traffic_delta(db, db_config.id, db_config.bytes_received or 0, db_config.bytes_sent or 0, new_rx, new_tx)
+                        db_config.bytes_received = new_rx
+                        db_config.bytes_sent = new_tx
+                        endpoint = peer.get("endpoint", "")
+                        if endpoint and endpoint != '(none)':
+                            db_config.endpoint = endpoint
+                            _track_endpoint(db, db_config.id, endpoint)
+                        _update_online_status(db_config, peer.get("latest_handshake"))
+                        check_traffic_limit(db_config, db)
+                        updated += 1
+            except Exception as e:
+                errors.append(f"{label}: {e}")
+                logger.warning(f"[traffic_sync] {label} error on server {server.id}: {e}")
 
         # --- XRay ---
         try:
