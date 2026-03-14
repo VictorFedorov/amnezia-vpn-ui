@@ -7,9 +7,6 @@ import {
   BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
-import { formatBytes } from '../utils/configDecoder';
-
-const BYTES_PER_GB = 1073741824;
 
 const PERIODS: { value: TrafficPeriod; label: string }[] = [
   { value: 'day',     label: 'День' },
@@ -19,6 +16,13 @@ const PERIODS: { value: TrafficPeriod; label: string }[] = [
   { value: 'year',    label: 'Год' },
 ];
 
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
 
 function formatBucket(bucket: string, period: TrafficPeriod): string {
   if (!bucket) return '';
@@ -83,22 +87,22 @@ function Traffic() {
           label: formatBucket(r.bucket, p),
           download: r.download,
           upload: r.upload,
-          downloadGB: parseFloat((r.download / BYTES_PER_GB).toFixed(3)),
-          uploadGB: parseFloat((r.upload / BYTES_PER_GB).toFixed(3)),
+          downloadGB: parseFloat((r.download / 1073741824).toFixed(3)),
+          uploadGB: parseFloat((r.upload / 1073741824).toFixed(3)),
         }))
       );
 
       setTopUsers(
         usersData.map((u: { username: string; total_traffic: number }) => ({
           name: u.username,
-          trafficGB: parseFloat((u.total_traffic / BYTES_PER_GB).toFixed(2)),
+          trafficGB: parseFloat((u.total_traffic / 1073741824).toFixed(2)),
         }))
       );
 
       setByServer(
         serverData.map((s: { server_name: string; total_traffic: number }) => ({
           name: s.server_name,
-          trafficGB: parseFloat((s.total_traffic / BYTES_PER_GB).toFixed(2)),
+          trafficGB: parseFloat((s.total_traffic / 1073741824).toFixed(2)),
         }))
       );
     } catch (err) {
@@ -195,8 +199,8 @@ function Traffic() {
                     width={60}
                   />
                   <Tooltip
-                    formatter={(value: number | undefined, name: string | undefined) => [
-                      `${(value ?? 0).toFixed(3)} GB`,
+                    formatter={(value: number, name: string) => [
+                      `${value.toFixed(3)} GB`,
                       name === 'downloadGB' ? 'Download' : 'Upload',
                     ]}
                     labelFormatter={(label) => `Период: ${label}`}
@@ -241,7 +245,7 @@ function Traffic() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" tickFormatter={(v) => `${v} GB`} tick={{ fontSize: 11 }} />
                     <YAxis dataKey="name" type="category" width={90} tick={{ fontSize: 12 }} />
-                    <Tooltip formatter={(v: number | undefined) => [`${v ?? 0} GB`, 'Трафик']} />
+                    <Tooltip formatter={(v: number) => [`${v} GB`, 'Трафик']} />
                     <Bar dataKey="trafficGB" fill="#8B5CF6" name="Трафик (GB)" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -263,7 +267,7 @@ function Traffic() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                     <YAxis tickFormatter={(v) => `${v} GB`} tick={{ fontSize: 11 }} width={55} />
-                    <Tooltip formatter={(v: number | undefined) => [`${v ?? 0} GB`, 'Трафик']} />
+                    <Tooltip formatter={(v: number) => [`${v} GB`, 'Трафик']} />
                     <Bar dataKey="trafficGB" fill="#F59E0B" name="Трафик (GB)" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>

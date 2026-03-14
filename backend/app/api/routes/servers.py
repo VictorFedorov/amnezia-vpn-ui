@@ -236,7 +236,7 @@ def _build_response_from_db(server_id: int, server_name: str, db: Session) -> di
             awg_peers.append({**base, "public_key": config.peer_public_key, "endpoint": config.endpoint, "allowed_ips": config.allowed_ips})
         elif config.protocol == ProtocolType.WIREGUARD:
             wireguard_peers.append({**base, "public_key": config.peer_public_key, "endpoint": config.endpoint, "allowed_ips": config.allowed_ips})
-        elif config.protocol in (ProtocolType.VLESS, ProtocolType.VMESS, ProtocolType.TROJAN, ProtocolType.SHADOWSOCKS):
+        elif config.protocol.value in ("vless", "vmess", "trojan", "shadowsocks"):
             xray_clients.append({**base, "uuid": config.client_uuid, "protocol": config.protocol.value})
     return {
         "server_id": server_id,
