@@ -1,12 +1,8 @@
 services:
   backend:
-    build:
-      context: ./backend
-    image: amnezia-backend:latest
+    image: ghcr.io/victorfedorov/amnezia-vpn-ui/backend:latest
     container_name: amnezia_backend
     volumes:
-      - ./backend:/app
-      - /app/venv
       - db_data:/app/data
     ports:
       - "8000:8000"
@@ -18,9 +14,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    build:
-      context: ./frontend
-    image: amnezia-frontend:latest
+    image: ghcr.io/victorfedorov/amnezia-vpn-ui/frontend:latest
     container_name: amnezia_frontend
     ports:
       - "80:80"
