@@ -199,7 +199,7 @@ function Traffic() {
                     width={60}
                   />
                   <Tooltip
-                    formatter={(value: number | undefined, name: string) => [
+                    formatter={(value: number | undefined, name: string | undefined) => [
                       `${(value ?? 0).toFixed(3)} GB`,
                       name === 'downloadGB' ? 'Download' : 'Upload',
                     ]}
