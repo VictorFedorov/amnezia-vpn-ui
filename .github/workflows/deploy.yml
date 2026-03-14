@@ -29,6 +29,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Build frontend JS (for error visibility)
+        working-directory: frontend
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
       - name: Build & push backend
         uses: docker/build-push-action@v6
         with:
