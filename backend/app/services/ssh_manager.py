@@ -99,25 +99,14 @@ class SSHManager:
 
 
 def create_ssh_manager(server_host: str, server_port: int, server_user: str,
-                       server_password: Optional[str] = None, 
+                       server_password: Optional[str] = None,
                        server_key: Optional[str] = None) -> SSHManager:
-    """
-    Фабричная функция для создания SSH менеджера
-    
-    Args:
-        server_host: Хост сервера
-        server_port: Порт SSH
-        server_user: Имя пользователя
-        server_password: Пароль (опционально)
-        server_key: Путь к SSH ключу (опционально)
-    
-    Returns:
-        SSHManager instance
-    """
+    from app.core.config import settings
     return SSHManager(
         host=server_host,
         port=server_port,
         username=server_user,
         password=server_password,
-        key_path=server_key
+        key_path=server_key,
+        strict_host_key_checking=settings.SSH_STRICT_HOST_KEY_CHECKING,
     )

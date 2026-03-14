@@ -62,12 +62,15 @@ async def add_server(
                 detail="Failed to connect to server via SSH"
             )
         ssh.disconnect()
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"SSH connection error for {server.host}: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"SSH connection error: {str(e)}"
+            detail="SSH connection failed"
         )
-    
+
     # Создание сервера
     db_server = Server(
         name=server.name,
@@ -143,10 +146,13 @@ async def update_server(
                     detail="Failed to connect to server via SSH"
                 )
             ssh.disconnect()
+        except HTTPException:
+            raise
         except Exception as e:
+            logger.error(f"SSH connection error for {update_data.get('host', server.host)}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"SSH connection error: {str(e)}"
+                detail="SSH connection failed"
             )
     
     # Обновляем обычные поля

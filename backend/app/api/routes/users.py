@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from app.core.database import get_db
-from app.models import User
+from app.models import User, ClientConfig
 from app.api.schemas import UserCreate, UserUpdate, UserResponse
 from app.api.routes.auth import get_current_active_user
 from app.utils.security import get_password_hash
@@ -138,7 +138,15 @@ async def delete_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete yourself"
         )
-    
+
+    # Нельзя удалить пользователя у которого есть конфигурации
+    config_count = db.query(ClientConfig).filter(ClientConfig.user_id == user_id).count()
+    if config_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot delete user: {config_count} config(s) assigned. Reassign or delete them first."
+        )
+
     db.delete(user)
     db.commit()
     

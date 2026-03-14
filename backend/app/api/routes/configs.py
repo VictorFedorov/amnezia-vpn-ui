@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
@@ -23,6 +25,7 @@ from app.services.ssh_manager import create_ssh_manager
 import shlex
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # --- Helper for sharing score ---
@@ -405,7 +408,7 @@ async def toggle_config_active(
         ssh.disconnect()
 
     except Exception as e:
-        print(f"Error updating server status: {e}")
+        logger.error(f"Error updating peer status on server: {e}")
 
     config.is_active = not config.is_active
 
@@ -432,42 +435,17 @@ async def get_config_qrcode(
         )
 
     content_to_encode = config.config_content
-    print(f"QR generation for config {config_id}: protocol={config.protocol.value}, content_length={len(content_to_encode) if content_to_encode else 0}")
-
-    # Пытаемся сгенерировать контент если он пуст и это XRay
-    if not content_to_encode and config.protocol in (ProtocolType.VLESS, ProtocolType.VMESS):
-        try:
-            if not config.server:
-                config.server = db.query(Server).filter(Server.id == config.server_id).first()
-
-            if config.server and config.client_uuid:
-                public_key = "xy8...placeholder...public...key"
-                short_id = "1234abcd"
-                name = f"{config.device_name} ({config.server.name})"
-
-                if config.protocol.value == "vless":
-                    content_to_encode = (
-                        f"vless://{config.client_uuid}@{config.server.host}:443"
-                        f"?security=reality&sni={config.server.host}&fp=chrome"
-                        f"&pbk={public_key}&sid={short_id}&type=tcp&headerType=none"
-                        f"#{name}"
-                    )
-        except Exception as e:
-            print(f"Error generating XRay link: {e}")
+    logger.debug(f"QR generation for config {config_id}: protocol={config.protocol.value}, content_length={len(content_to_encode) if content_to_encode else 0}")
 
     if not content_to_encode:
         try:
             server = db.query(Server).filter(Server.id == config.server_id).first()
             if server:
-                print(f"Remote QR: connecting to server {server.host}:{server.port} as {server.ssh_user}")
+                logger.debug(f"Remote QR: connecting to server {server.host}:{server.port} as {server.ssh_user}")
                 ssh = create_ssh_manager(server.host, server.port, server.ssh_user, server.get_password(), server.ssh_key_path)
                 if ssh.connect():
-                    print("Remote QR: SSH connected successfully")
-                    list_cmd = "docker ps --format '{{.Names}}'"
-                    exit_code, stdout_text, stderr_text = ssh.execute_command(list_cmd)
-                    print(f"Remote QR: containers list exit {exit_code}, stdout: {repr(stdout_text)}")
-
                     search_key = None
+                    container = None
                     if config.protocol.value == 'awg' and config.peer_public_key:
                         search_key = config.peer_public_key
                         container = 'amnezia-awg'
@@ -475,50 +453,36 @@ async def get_config_qrcode(
                         search_key = config.client_uuid
                         container = 'amnezia-xray'
                     else:
-                        print(f"Remote QR: no search key for protocol {config.protocol.value}")
-                        search_key = None
+                        logger.debug(f"Remote QR: no search key for protocol {config.protocol.value}")
 
-                    if search_key:
-                        print(f"Remote QR: searching for key {repr(search_key)} in container {container}")
-                        qr_cmd = f"docker exec {container} command -v qrencode"
-                        exit_code, stdout_text, stderr_text = ssh.execute_command(qr_cmd)
-                        print(f"Remote QR: qrencode check exit {exit_code}, stdout: {repr(stdout_text)}")
-
+                    if search_key and container:
                         escaped_key = shlex.quote(search_key)
                         remote_cmd = (
                             f'sh -c \'f=$(grep -r -F {escaped_key} /etc /data /config /etc/wireguard /opt/amnezia /var/lib/amnezia 2>/dev/null | head -n1 | cut -d: -f1); '
                             'if [ -n "$f" ]; then echo "FOUND: $f"; cat "$f"; else echo "NOT_FOUND"; fi\'')
                         cmd = f"docker exec {container} {remote_cmd}"
-                        print(f"Remote QR cmd: {cmd}")
                         exit_code, stdout_text, stderr_text = ssh.execute_command(cmd)
-                        print(f"Remote QR exit {exit_code} stdout_len={len(stdout_text or '')} stderr_len={len(stderr_text or '')}")
-                        if stdout_text:
-                            print(f"Remote QR stdout preview: {repr(stdout_text[:200])}")
-                        if stderr_text:
-                            print(f"Remote QR stderr: {repr(stderr_text[:200])}")
+                        logger.debug(f"Remote QR exit={exit_code} stdout_len={len(stdout_text or '')} stderr_len={len(stderr_text or '')}")
 
                         if exit_code == 0 and stdout_text and stdout_text.strip() and not stdout_text.strip().startswith('NOT_FOUND'):
                             if stdout_text.startswith('FOUND:'):
                                 lines = stdout_text.split('\n', 1)
                                 if len(lines) >= 2:
                                     file_path = lines[0].replace('FOUND:', '').strip()
-                                    config_content = lines[1]
-                                    print(f"Remote QR: found config file {file_path}, content length: {len(config_content)}")
-                                    content_to_encode = config_content
+                                    content_to_encode = lines[1]
+                                    logger.debug(f"Remote QR: found config at {file_path}, length={len(content_to_encode)}")
                                 else:
                                     content_to_encode = stdout_text
                             else:
                                 content_to_encode = stdout_text
                         else:
-                            print("Remote QR: no valid output from container")
-                    else:
-                        print("Remote QR: no search key")
+                            logger.debug("Remote QR: config not found in container")
 
                     ssh.disconnect()
                 else:
-                    print("Remote QR: SSH connect failed")
+                    logger.warning(f"Remote QR: SSH connect failed to {server.host}")
         except Exception as e:
-            print(f"Remote QR generation error: {e}")
+            logger.error(f"Remote QR generation error: {e}")
 
     if not content_to_encode:
          raise HTTPException(
