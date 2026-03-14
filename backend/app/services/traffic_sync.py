@@ -189,8 +189,8 @@ def _try_broadcast(data: dict) -> None:
         loop = ws_manager._loop
         if loop and loop.is_running():
             asyncio.run_coroutine_threadsafe(ws_manager.broadcast(data), loop)
-    except Exception:
-        pass  # WS not available or no clients connected
+    except Exception as e:
+        logger.debug(f"[broadcast] WS not available or no clients connected: {e}")
 
 
 def sync_server_traffic(server: Server, db: Session) -> dict:
