@@ -1,32 +1,31 @@
-# Используем официальный image Python
-FROM python:3.10-slim
+# ── Этап 1: сборка зависимостей ───────────────────────────────────────────────
+FROM python:3.11-slim AS builder
 
-# Рабочая директория
-WORKDIR /app
+WORKDIR /build
 
-# Переменные окружения для Python
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
-# Установка системных зависимостей (если нужны для сборки пакетов)
-# Например, для psycopg2 (хотя используем binary), или для paramiko/cryptography
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libffi-dev \
-    musl-dev \
+    curl \
+    && curl -Ls https://astral.sh/uv/install.sh | sh \
+    && mv /root/.local/bin/uv /usr/local/bin/uv \
+    && apt-get purge -y curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Копируем requirements
 COPY requirements.txt .
+RUN uv pip install --system --no-cache -r requirements.txt
 
-# Устанавливаем зависимости
-# Используем bcrypt 4.0.1 как фикс для passlib, если проблема сохранится
-RUN pip install --no-cache-dir -r requirements.txt
-# Принудительно ставим совместимый bcrypt, если он не указан явно в requirements
-RUN pip install "bcrypt==4.0.1"
+# ── Этап 2: рантайм ───────────────────────────────────────────────────────────
+FROM python:3.11-slim
 
-# Копируем исходный код
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
 COPY . .
 
-# Команда запуска (будет переопределена в docker-compose для dev режима, но хороша для default)
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
