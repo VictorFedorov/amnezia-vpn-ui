@@ -36,7 +36,7 @@ async function zlibDecompress(data: Uint8Array): Promise<string> {
   const writer = ds.writable.getWriter();
   const reader = ds.readable.getReader();
 
-  writer.write(data);
+  writer.write(data as Uint8Array<ArrayBuffer>);
   writer.close();
 
   const chunks: Uint8Array[] = [];

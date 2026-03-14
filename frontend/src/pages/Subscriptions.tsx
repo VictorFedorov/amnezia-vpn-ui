@@ -4,7 +4,7 @@ import { subscriptionsAPI, usersAPI, subscriptionPlansAPI, configsAPI, vpnClient
 
 function Subscriptions() {
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
+  const [_users, setUsers] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [configs, setConfigs] = useState<any[]>([]);
   const [plans, setPlans] = useState<any[]>([]);

@@ -20,11 +20,16 @@ interface RealtimeState {
 const WS_RECONNECT_DELAY = 5000;
 
 const getWsUrl = () => {
-  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-  const wsProtocol = apiUrl.startsWith('https') ? 'wss' : 'ws';
-  const host = apiUrl.replace(/^https?:\/\//, '');
   const token = localStorage.getItem('access_token') || '';
-  return `${wsProtocol}://${host}/api/ws?token=${token}`;
+  if (import.meta.env.VITE_API_URL) {
+    const apiUrl = import.meta.env.VITE_API_URL;
+    const wsProtocol = apiUrl.startsWith('https') ? 'wss' : 'ws';
+    const host = apiUrl.replace(/^https?:\/\//, '');
+    return `${wsProtocol}://${host}/api/ws?token=${token}`;
+  }
+  // В production nginx проксирует /ws на бэкенд
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${wsProtocol}://${window.location.host}/ws?token=${token}`;
 };
 
 export const useRealtimeStore = create<RealtimeState>((set, get) => {

@@ -1429,13 +1429,11 @@ function UsersOnServers() {
                 <div className="flex flex-col items-center space-y-4">
                   {qrConfigId && (
                     <div className="bg-white p-4 rounded-lg border-2 border-gray-200 min-h-[256px] flex items-center justify-center">
-                      {console.log('Rendering QR modal - loadingQr:', loadingQr, 'qrImage:', qrImage)}
                       {loadingQr ? (
                         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                       ) : qrImage ? (
                         <div>
-                          {console.log('Rendering QR image with src:', qrImage)}
-                          <img 
+                          <img
                             src={qrImage}
                             alt="QR Code"
                             className="w-64 h-64"
