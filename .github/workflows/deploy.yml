@@ -1,15 +1,14 @@
-name: Build & Deploy
+name: Build & Push
 
 on:
   push:
     branches: [main]
 
 env:
-  REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/amnezia-vpn-ui
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -50,17 +49,3 @@ jobs:
             ${{ env.IMAGE_PREFIX }}/frontend:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          password: ${{ secrets.DEPLOY_PASSWORD }}
-          port: ${{ secrets.DEPLOY_PORT }}
-          script: |
-            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            cd ${{ secrets.DEPLOY_PATH }}
-            docker-compose pull backend frontend
-            docker-compose up -d backend frontend
-            docker image prune -f
