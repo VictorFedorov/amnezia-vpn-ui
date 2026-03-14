@@ -199,8 +199,8 @@ function Traffic() {
                     width={60}
                   />
                   <Tooltip
-                    formatter={(value: number, name: string) => [
-                      `${value.toFixed(3)} GB`,
+                    formatter={(value: number | undefined, name: string) => [
+                      `${(value ?? 0).toFixed(3)} GB`,
                       name === 'downloadGB' ? 'Download' : 'Upload',
                     ]}
                     labelFormatter={(label) => `Период: ${label}`}
@@ -245,7 +245,7 @@ function Traffic() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" tickFormatter={(v) => `${v} GB`} tick={{ fontSize: 11 }} />
                     <YAxis dataKey="name" type="category" width={90} tick={{ fontSize: 12 }} />
-                    <Tooltip formatter={(v: number) => [`${v} GB`, 'Трафик']} />
+                    <Tooltip formatter={(v: number | undefined) => [`${v ?? 0} GB`, 'Трафик']} />
                     <Bar dataKey="trafficGB" fill="#8B5CF6" name="Трафик (GB)" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -267,7 +267,7 @@ function Traffic() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                     <YAxis tickFormatter={(v) => `${v} GB`} tick={{ fontSize: 11 }} width={55} />
-                    <Tooltip formatter={(v: number) => [`${v} GB`, 'Трафик']} />
+                    <Tooltip formatter={(v: number | undefined) => [`${v ?? 0} GB`, 'Трафик']} />
                     <Bar dataKey="trafficGB" fill="#F59E0B" name="Трафик (GB)" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
