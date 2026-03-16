@@ -129,7 +129,7 @@ async def update_server(
     # Сохраняем пароль отдельно, так как нужно его зашифровать
     new_password = update_data.pop('ssh_password', None)
     
-    # Если обновляются данные подключения, проверяем SSH
+    # Если обновляются данные подключения, проверяем SSH (не блокируем сохранение при неудаче)
     if any(k in update_data for k in ['host', 'port', 'ssh_user', 'ssh_key_path']) or new_password:
         try:
             ssh = create_ssh_manager(
@@ -139,21 +139,12 @@ async def update_server(
                 server_password=new_password if new_password else server.get_password(),
                 server_key=update_data.get('ssh_key_path', server.ssh_key_path)
             )
-            
-            if not ssh.connect():
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Failed to connect to server via SSH"
-                )
-            ssh.disconnect()
-        except HTTPException:
-            raise
+            if ssh.connect():
+                ssh.disconnect()
+            else:
+                logger.warning(f"SSH validation failed for {update_data.get('host', server.host)}, saving credentials anyway")
         except Exception as e:
-            logger.error(f"SSH connection error for {update_data.get('host', server.host)}: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="SSH connection failed"
-            )
+            logger.warning(f"SSH validation error for {update_data.get('host', server.host)}: {e}, saving credentials anyway")
     
     # Обновляем обычные поля
     for field, value in update_data.items():
