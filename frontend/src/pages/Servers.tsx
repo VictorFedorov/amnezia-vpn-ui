@@ -100,6 +100,7 @@ function Servers() {
     };
     if (editFormData.ssh_password) {
       payload.ssh_password = editFormData.ssh_password;
+      payload.ssh_key_path = null; // clear key path so password auth is used
     }
 
     try {
