@@ -51,13 +51,13 @@ function Users() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this user?')) return;
+    if (!confirm('Деактивировать пользователя? Он потеряет доступ к системе.')) return;
 
     try {
       await usersAPI.delete(id);
       loadUsers();
-    } catch (error) {
-      alert('Failed to delete user');
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Failed to deactivate user');
     }
   };
 

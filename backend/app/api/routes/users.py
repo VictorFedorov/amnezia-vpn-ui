@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from app.core.database import get_db
-from app.models import User, ClientConfig
+from app.models import User
 from app.api.schemas import UserCreate, UserUpdate, UserResponse
 from app.api.routes.auth import get_current_active_user
 from app.utils.security import get_password_hash
@@ -124,30 +124,21 @@ async def delete_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Удалить пользователя"""
+    """Деактивировать пользователя (soft delete)"""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    
-    # Не позволяем удалить самого себя
+
     if user.id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot delete yourself"
+            detail="Cannot deactivate yourself"
         )
 
-    # Нельзя удалить пользователя у которого есть конфигурации
-    config_count = db.query(ClientConfig).filter(ClientConfig.user_id == user_id).count()
-    if config_count > 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot delete user: {config_count} config(s) assigned. Reassign or delete them first."
-        )
-
-    db.delete(user)
+    user.is_active = False
     db.commit()
-    
+
     return None
